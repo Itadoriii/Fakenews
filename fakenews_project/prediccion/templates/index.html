@@ -38,33 +38,42 @@
       {% csrf_token %}
       <div class="mb-3">
         <label for="titulo" class="form-label">📰 Título</label>
-        <input type="text" class="form-control" id="titulo" name="titulo" placeholder="Ej: Anuncian vacuna milagrosa..." required />
+        <input type="text" class="form-control" id="titulo" name="titulo"
+         value="{{ titulo|default:'' }}"
+         placeholder="Ej: Anuncian vacuna milagrosa..." required />
       </div>
 
       <div class="mb-3">
         <label for="contenido" class="form-label">📄 Contenido</label>
-        <textarea class="form-control" id="contenido" name="contenido" rows="7" placeholder="Pega aquí el cuerpo completo de la noticia..." required></textarea>
+        <textarea class="form-control" id="contenido" name="contenido" rows="7"
+         placeholder="Pega aquí el cuerpo completo de la noticia..." required>{{ contenido|default:'' }}</textarea>
       </div>
 
       <div class="row mb-3">
         <div class="col-md-6">
           <label for="fecha" class="form-label">📅 Fecha</label>
-          <input type="date" class="form-control" id="fecha" name="fecha" required />
+          <input type="date" class="form-control" id="fecha" name="fecha"
+           value="{{ fecha|default:'' }}" required />
         </div>
         <div class="col-md-6">
           <label for="autor" class="form-label">✍️ Autor</label>
-          <input type="text" class="form-control" id="autor" name="autor" placeholder="Ej: Agencia X, Juan Pérez..." required />
+          <input type="text" class="form-control" id="autor" name="autor"
+           value="{{ autor|default:'' }}"
+           placeholder="Ej: Agencia X, Juan Pérez..." required />
         </div>
       </div>
 
       <div class="d-grid">
-        <button type="submit" class="btn btn-primary">Análizar</button>
+        <button type="submit" class="btn btn-primary">Analizar</button>
       </div>
     </form>
+
     {% if pred_keras %}
     <div class="alert alert-info mt-4">
-      <strong>Predicción Modelo Keras:</strong> {{ pred_keras }} <br />
-      <strong>Predicción Modelo MLP:</strong> {{ pred_mlp }}
+      <strong>Predicción Modelo Keras:</strong> {{ pred_keras }}<br />
+      <strong>- Coincidencias título-contenido:</strong> {{ coincidencias }} palabras clave<br />
+      <strong>- Longitud:</strong> {{ longitud }} palabras<br />
+      <strong>- Score de emotividad:</strong> {{ score_emotividad }} (emoción: {{ emocion }})
     </div>
     {% endif %}
 
