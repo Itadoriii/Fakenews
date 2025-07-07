@@ -1,20 +1,47 @@
+# %%
+# Procesamiento de datos
 import pandas as pd
 import numpy as np
 import re
+
+# Visualización
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Preprocesamiento y modelado clásico
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.impute import SimpleImputer
+from sklearn.model_selection import train_test_split
+from sklearn.utils import shuffle
+from sklearn.neural_network import MLPClassifier
+from sklearn.metrics import classification_report, accuracy_score
+
+# Deep Learning con Keras
+from tensorflow.keras.models import Sequential, load_model
+from tensorflow.keras.layers import Dense, Dropout
+
+# Transformers y Deep Learning con PyTorch
 import torch
 from transformers import DistilBertTokenizer, DistilBertModel
-import joblib
-from tensorflow.keras.models import load_model
-from collections import Counter
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
-from django.shortcuts import render
 
-import string
-import nltk
-from nltk.corpus import stopwords
-import spacy
-# --- Pega aquí las funciones que definiste para:
-# construir_diccionario_emocional, calcular_emotividad, emocion_predominante,
+# Barra de progreso
+from tqdm import tqdm
+
+# %%
+df = pd.read_csv(fr'fakenews_project\noticias_limpias_balanceadas2.csv') 
+df_diccionario = pd.read_csv(fr'fakenews_project\diccionario.csv')
+
+# %%
+df.info()
+
+# %%
+df_metadata = df.copy()
+df_heuristica = df.copy()
+
+# %% [markdown]
+# Reglas Heuristicas
+
+# %%
 def construir_diccionario_emocional(df_diccionario):
     emociones = df_diccionario.columns[1:]  # Todas menos 'palabra'
     diccionario_emocional = {}
@@ -51,11 +78,11 @@ def aplicar_emotividad(df_heuristica, df_diccionario):
         lambda x: emocion_predominante(x, diccionario_emocional)
     )
     return df_heuristica[['score_emotividad']]
-# limpiar_texto, feature_engineering, generar_embedding_heuristico
-import string
-import nltk
-from nltk.corpus import stopwords
 
+# %%
+import string
+from nltk.corpus import stopwords
+import nltk
 
 nltk.download('stopwords')
 stop_words = set(stopwords.words('spanish'))
@@ -94,7 +121,8 @@ def aplicar_heuristicas_linguisticas(df_heuristica):
     )
     df_heuristica['diversidad_lexica'] = df_heuristica['contenido'].apply(diversidad_lexica)
     return df_heuristica[['incertidumbre', 'subjetividad', 'diversidad_lexica']]
-# (Ya las tienes definidas en tu código, solo hay que usarlas.)
+
+# %%
 import spacy
 nlp = spacy.load("es_core_news_sm", disable=["ner", "tagger"])
 
@@ -116,6 +144,8 @@ def aplicar_patrones_sintacticos(df_heuristica):
         })
     df_patrones = pd.DataFrame(resultados, index=df_heuristica.index)
     return df_patrones
+
+# %%
 import string
 from nltk.corpus import stopwords
 import nltk
@@ -147,6 +177,7 @@ def aplicar_relacion_titulo_cuerpo(df_heuristica):
         lambda row: consistencia_jaccard(row['titulo'], row['contenido']), axis=1)
     return df_heuristica[['consistencia_titulo_cuerpo']]
 
+# %%
 def generar_embedding_heuristico(df, df_diccionario):
     emotividad = aplicar_emotividad(df.copy(), df_diccionario)
     heuristicas = aplicar_heuristicas_linguisticas(df.copy())
@@ -157,6 +188,10 @@ def generar_embedding_heuristico(df, df_diccionario):
     heuristico_df = heuristico_df.replace([np.inf, -np.inf], np.nan).fillna(0)
     return heuristico_df.to_numpy()
 
+# %% [markdown]
+# #Feature Engineering
+
+# %%
 def feature_engineering(df):
     df['longitud'] = df['contenido'].apply(lambda x: len(str(x).split()))
     df['longitud_titulo'] = df['titulo'].apply(lambda x: len(str(x).split()))
@@ -184,19 +219,29 @@ def feature_engineering(df):
     df[columnas_num] = scaler.fit_transform(df[columnas_num])
     return df, scaler
 
+# %% [markdown]
+# Embedding Metadata
+
+# %%
 def generar_embeddings(df, ohe=None):
     col_num = ['longitud', 'longitud_titulo', 'exclamaciones', 'interrogaciones',
                'palabras_sensacionalistas', 'noticias_autor', 'relacion_titulo_contenido']
-
+    
     if ohe is None:
         ohe = OneHotEncoder(sparse_output=False, handle_unknown='ignore')
         autor_encoded = ohe.fit_transform(df[['autor']])
     else:
         autor_encoded = ohe.transform(df[['autor']])
-
+    
     df_autor = pd.DataFrame(autor_encoded, columns=ohe.get_feature_names_out(['autor']), index=df.index)
     df_embed = pd.concat([df[col_num + ['mes_sin', 'mes_cos', 'dia_sin', 'dia_cos']], df_autor], axis=1)
     return df_embed.to_numpy(), ohe
+
+
+# %% [markdown]
+# Embedding DistilBERT
+
+# %%
 # Limpieza básica
 def limpiar_texto(texto):
     texto = texto.lower()
@@ -204,7 +249,9 @@ def limpiar_texto(texto):
     texto = re.sub(r'\s+', ' ', texto).strip()
     return texto
 
+df['contenido_limpio'] = df['contenido'].astype(str).apply(limpiar_texto)
 
+# %%
 from torch.utils.data import DataLoader, Dataset
 from transformers import DistilBertTokenizer, DistilBertModel
 import torch
@@ -244,102 +291,232 @@ def generar_embedding_bert(df, tokenizer, model, columna_texto='contenido_limpio
 
     return torch.cat(embeddings, dim=0).numpy()
 
-# Carga modelo y recursos
-model = load_model('mejor_modelo_val_loss.h5')
-scaler_metadata = joblib.load('scaler_metadata.pkl')
-scaler_bert = joblib.load('scaler_bert.pkl')
-scaler_heuristic = joblib.load('scaler_heuristic.pkl')
-ohe_autor = joblib.load('encoder_autor.pkl')
 
+# %% [markdown]
+# Funciones
+
+# %%
+from collections import Counter
+
+# %%
+df_metadata, scaler = feature_engineering(df_metadata)
+
+print("➡️ Ingeniería de metadatos...")
+X_metadata, _ = generar_embeddings(df_metadata)
+
+
+# %%
+# Embeddings heurísticos (ya los tienes)
+print("➡️ # Embeddings heurísticos...")
+X_heuristico = generar_embedding_heuristico(df_heuristica, df_diccionario)
+
+# 4. Normalización
+scaler_heuristic = StandardScaler()
+X_heuristico_scaled = scaler_heuristic.fit_transform(X_heuristico)
+
+# %%
+# 3. Tokenizer y modelo BERT
 tokenizer = DistilBertTokenizer.from_pretrained('distilbert-base-multilingual-cased')
 model_bert = DistilBertModel.from_pretrained('distilbert-base-multilingual-cased')
+X_bert = generar_embedding_bert(df, tokenizer, model_bert)
+scaler_bert = StandardScaler()
+X_bert_scaled = scaler_bert.fit_transform(X_bert)
 
-df_diccionario = pd.read_csv('diccionario.csv')
+# %%
+print(X_bert_scaled.shape)
+print(X_metadata.shape)
+print(X_heuristico_scaled.shape)
 
-def predecir_noticia(noticia):
-    df_noticia = pd.DataFrame(noticia)
+# %%
+# --- Columnas numéricas usadas en el entrenamiento ---
+col_num = ['longitud', 'longitud_titulo', 'exclamaciones', 'interrogaciones',
+           'palabras_sensacionalistas', 'noticias_autor', 'relacion_titulo_contenido']
 
-    # 1) Embeddings heurísticos
-    X_heuristico = generar_embedding_heuristico(df_noticia.copy(), df_diccionario)
-    X_heuristico = scaler_heuristic.transform(X_heuristico)
+# Escalar columnas numéricas
+X_num = df_metadata[col_num].values
+scaler = StandardScaler()
+X_num_scaled = scaler.fit_transform(X_num)
 
-    # 2) Metadata (feature engineering + escalado)
-    df_meta, _ = feature_engineering(df_noticia.copy())
+# Variables cíclicas (sin escalar)
+X_ciclicas = df_metadata[['mes_sin', 'mes_cos', 'dia_sin', 'dia_cos']].values
 
-    col_num = ['longitud', 'longitud_titulo', 'exclamaciones', 'interrogaciones',
-               'palabras_sensacionalistas', 'noticias_autor', 'relacion_titulo_contenido']
-    X_num = df_meta[col_num].values
-    X_num_scaled = scaler_metadata.transform(X_num)
+# OneHotEncoding para autor
+ohe = OneHotEncoder(sparse_output=False, handle_unknown='ignore')
+X_autor = ohe.fit_transform(df_metadata[['autor']])
 
-    X_ciclicas = df_meta[['mes_sin', 'mes_cos', 'dia_sin', 'dia_cos']].values
-    X_autor = ohe_autor.transform(df_meta[['autor']])
+# Concatenar todo
+X_metadata = np.concatenate([X_num_scaled, X_ciclicas, X_autor], axis=1)
 
-    X_metadata = np.concatenate([X_num_scaled, X_ciclicas, X_autor], axis=1)
+# Guardar los transformadores para usar en predicción
+import joblib
+joblib.dump(scaler, 'scaler_metadata.pkl')
+joblib.dump(ohe, 'encoder_autor.pkl')
 
-    # 3) Embedding BERT
-    df_noticia['contenido_limpio'] = df_noticia['contenido'].apply(limpiar_texto)
-    inputs = tokenizer(
-        df_noticia['contenido_limpio'].iloc[0],
-        return_tensors='pt',
-        truncation=True,
-        padding=True,
-        max_length=512
-    )
-    with torch.no_grad():
-        outputs = model_bert(**inputs)
-        X_bert = outputs.last_hidden_state[:, 0, :].squeeze().numpy().reshape(1, -1)
-    X_bert = scaler_bert.transform(X_bert)
+X_bert = scaler_bert.transform(X_bert)
+X_heuristico = scaler_heuristic.transform(X_heuristico)
 
-    # 4) Concatenar todo y ajustar dimensiones
-    X_final = np.concatenate([X_bert, X_metadata, X_heuristico], axis=1)
-    required_dim = model.input_shape[1]
+# %%
+X_final = np.concatenate([X_bert_scaled, X_metadata, X_heuristico_scaled], axis=1)
 
-    if X_final.shape[1] < required_dim:
-        padding = np.zeros((1, required_dim - X_final.shape[1]))
-        X_final = np.concatenate([X_final, padding], axis=1)
-    elif X_final.shape[1] > required_dim:
-        X_final = X_final[:, :required_dim]
+# %%
+np.save('X_finalv3.npy', X_final)
+import joblib
 
-    # 5) Predecir
-    prob = float(model.predict(X_final, verbose=0)[0][0])
-    etiqueta = "Verdadera" if prob >= 0.5 else "Falsa"
+joblib.dump(scaler, 'scaler_metadata.pkl')
+joblib.dump(scaler_bert, 'scaler_bert.pkl')
+joblib.dump(scaler_heuristic, 'scaler_heuristic.pkl')
+joblib.dump(ohe, 'encoder_autor.pkl')
 
-    # 6) Mostrar resultados y heurísticas explicativas
-    print(f"\nProbabilidad de ser verdadera: {prob:.2%}")
-    print(f"Clasificación: {etiqueta}")
 
-    titulo = df_noticia['titulo'].iloc[0]
-    contenido = df_noticia['contenido'].iloc[0]
-    autor = df_noticia['autor'].iloc[0]
 
-    from collections import Counter
+# %%
+y = df['label'].values 
 
-    coincidencias = len(set(re.findall(r'\b\w+\b', titulo.lower())).intersection(
-                       set(re.findall(r'\b\w+\b', contenido.lower()))))
-    print(f"- Coincidencias título-contenido: {coincidencias} palabras clave")
+# %%
+print(X_final)
 
-    if autor.lower() == "desconocido":
-        print("- ⚠️ Autor desconocido (reduce credibilidad)")
+# %%
+# Primera división
+X_train, X_temp, y_train, y_temp = train_test_split(
+    X_final, y, 
+    test_size=0.30, 
+    random_state=42,
+    stratify=y 
+)
 
-    longitud = len(contenido.split())
-    if longitud < 150:
-        print(f"- Contenido corto ({longitud} palabras)")
-    elif longitud > 800:
-        print(f"- Contenido muy largo ({longitud} palabras)")
-    else:
-        print(f"- Longitud adecuada ({longitud} palabras)")
+# Segunda división
+X_val, X_test, y_val, y_test = train_test_split(
+    X_temp, y_temp, 
+    test_size=0.50, 
+    random_state=42,
+    stratify=y_temp 
+)
 
-    exclamaciones = contenido.count('!')
-    if exclamaciones > 3:
-        print(f"- ⚠️ {exclamaciones} signos de exclamación (posible sensacionalismo)")
+# %%
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Dropout
+from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
+from tensorflow.keras.optimizers import Adam
 
-    dic_emocional = construir_diccionario_emocional(df_diccionario)
-    emotividad = calcular_emotividad(contenido, dic_emocional)
-    emocion = emocion_predominante(contenido, dic_emocional)
-    print(f"- Score de emotividad: {emotividad:.2f} (emoción predominante: {emocion})")
+# --- Hiperparámetros ---
+input_dim = X_train.shape[1]
+dropout_rate = 0.3
+learning_rate = 0.001
+batch_size = 16
+epochs = 100
+patience = 10
 
-# --- Ejemplo de uso ---
-noticia_ejemplo = {
+# --- Modelo ---
+model = Sequential([
+    Dense(128, activation='relu', input_shape=(X_train.shape[1],)),
+    Dropout(0.4),
+    Dense(64, activation='relu'),
+    Dropout(0.4),
+    Dense(1, activation='sigmoid')
+])
+
+# --- Compilación ---
+optimizer = Adam(learning_rate=learning_rate)
+model.compile(
+    optimizer=optimizer,
+    loss='binary_crossentropy',
+    metrics=['accuracy']
+)
+
+# --- Callbacks ---
+early_stop = EarlyStopping(
+    monitor='val_loss',
+    patience=patience,
+    restore_best_weights=True
+)
+
+model_checkpoint = ModelCheckpoint(
+    filepath='mejor_modelo_val_loss.h5',  # Se guarda en la misma carpeta
+    monitor='val_loss',
+    mode='min',
+    save_best_only=True,
+    verbose=1
+)
+
+# --- Entrenamiento ---
+history = model.fit(
+    X_train, y_train,
+    validation_data=(X_val, y_val),
+    epochs=epochs,
+    batch_size=batch_size,
+    callbacks=[early_stop, model_checkpoint],
+    verbose=1
+)
+
+
+# %%
+import matplotlib.pyplot as plt
+
+# --- Pérdida ---
+plt.figure(figsize=(12, 5))
+
+plt.subplot(1, 2, 1)
+plt.plot(history.history['loss'], label='Entrenamiento')
+plt.plot(history.history['val_loss'], label='Validación')
+plt.title('Pérdida durante el entrenamiento')
+plt.xlabel('Épocas')
+plt.ylabel('Pérdida')
+plt.legend()
+plt.grid(True)
+
+# --- Precisión ---
+plt.subplot(1, 2, 2)
+plt.plot(history.history['accuracy'], label='Entrenamiento')
+plt.plot(history.history['val_accuracy'], label='Validación')
+plt.title('Precisión durante el entrenamiento')
+plt.xlabel('Épocas')
+plt.ylabel('Precisión')
+plt.legend()
+plt.grid(True)
+
+plt.tight_layout()
+plt.show()
+
+
+# %%
+from sklearn.metrics import roc_curve  # Añade esta importación
+from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+# Predicciones en el conjunto de test
+y_pred = model.predict(X_test).ravel()
+y_pred_classes = (y_pred > 0.5).astype("int32")
+
+# Reporte de clasificación
+print("Classification Report:")
+print(classification_report(y_test, y_pred_classes))
+
+# Matriz de confusión
+cm = confusion_matrix(y_test, y_pred_classes)
+plt.figure(figsize=(6,6))
+sns.heatmap(cm, annot=True, fmt='d', cmap='Blues')
+plt.xlabel('Predicho')
+plt.ylabel('Real')
+plt.title('Matriz de Confusión')
+plt.show()
+
+# Curva ROC y AUC
+fpr, tpr, thresholds = roc_curve(y_test, y_pred)
+plt.figure(figsize=(8,6))
+plt.plot(fpr, tpr, label=f'AUC = {roc_auc_score(y_test, y_pred):.2f}')
+plt.plot([0, 1], [0, 1], 'k--')
+plt.xlabel('Tasa de Falsos Positivos')
+plt.ylabel('Tasa de Verdaderos Positivos')
+plt.title('Curva ROC')
+plt.legend()
+plt.show()
+
+# %%
+def ingresar_y_clasificar_noticia():
+    print("📰 Analizando noticia de ejemplo...\n")
+
+    noticia = {
     'titulo': ['Expulsan a una joven de 16 años de un instituto en Cataluña por hablar español… ¡en una clase de lengua española!'],
     'autor': ['alertadigital'],
     'fecha': ['05-04-2019'],
@@ -359,42 +536,44 @@ Los hechos, que se produjeron ayer jueves 4 de abril, prueba, en opinión de la 
 }
 
 
-# ⚙️ Carga una sola vez
-model = load_model('mejor_modelo_val_loss.h5')
-scaler_metadata = joblib.load('scaler_metadata.pkl')
-scaler_bert = joblib.load('scaler_bert.pkl')
-scaler_heuristic = joblib.load('scaler_heuristic.pkl')
-ohe_autor = joblib.load('encoder_autor.pkl')
-tokenizer = DistilBertTokenizer.from_pretrained('distilbert-base-multilingual-cased')
-model_bert = DistilBertModel.from_pretrained('distilbert-base-multilingual-cased')
-df_diccionario = pd.read_csv('diccionario.csv')
-def predict_noticia_view(request):
-    if request.method == "POST":
-        titulo = request.POST.get('titulo')
-        autor = request.POST.get('autor')
-        fecha = request.POST.get('fecha')
-        contenido = request.POST.get('contenido')
 
-        df_noticia = pd.DataFrame([{
-            'titulo': titulo,
-            'autor': autor,
-            'fecha': fecha,
-            'contenido': contenido
-        }])
 
-        # === Igual que antes ===
+
+
+    df_noticia = pd.DataFrame(noticia)
+    print("\n🔍 Procesando la noticia...")
+
+    try:
+        # --- Cargar transformadores ---
+        import joblib
+        scaler = joblib.load('scaler_metadata.pkl')
+        scaler_bert = joblib.load('scaler_bert.pkl')
+        scaler_heuristic = joblib.load('scaler_heuristic.pkl')
+        ohe = joblib.load('encoder_autor.pkl')
+
+        # --- Heurísticas ---
         X_heuristico = generar_embedding_heuristico(df_noticia.copy(), df_diccionario)
         X_heuristico = scaler_heuristic.transform(X_heuristico)
 
+        # --- Metadata ---
         df_meta, _ = feature_engineering(df_noticia.copy())
+
+        # Escalar solo las columnas numéricas
         col_num = ['longitud', 'longitud_titulo', 'exclamaciones', 'interrogaciones',
                    'palabras_sensacionalistas', 'noticias_autor', 'relacion_titulo_contenido']
         X_num = df_meta[col_num].values
-        X_num_scaled = scaler_metadata.transform(X_num)
+        X_num_scaled = scaler.transform(X_num)
+
+        # Variables cíclicas
         X_ciclicas = df_meta[['mes_sin', 'mes_cos', 'dia_sin', 'dia_cos']].values
-        X_autor = ohe_autor.transform(df_meta[['autor']])
+
+        # Autor (OHE)
+        X_autor = ohe.transform(df_meta[['autor']])
+
+        # Concatenar metadata
         X_metadata = np.concatenate([X_num_scaled, X_ciclicas, X_autor], axis=1)
 
+        # --- BERT ---
         df_noticia['contenido_limpio'] = df_noticia['contenido'].apply(limpiar_texto)
         inputs = tokenizer(
             df_noticia['contenido_limpio'].iloc[0],
@@ -408,41 +587,65 @@ def predict_noticia_view(request):
             X_bert = outputs.last_hidden_state[:, 0, :].squeeze().numpy().reshape(1, -1)
         X_bert = scaler_bert.transform(X_bert)
 
+        # --- Concatenar todo ---
         X_final = np.concatenate([X_bert, X_metadata, X_heuristico], axis=1)
-        required_dim = model.input_shape[1]
 
+        # --- Asegurar dimensiones compatibles ---
+        required_dim = model.input_shape[1]
         if X_final.shape[1] < required_dim:
             padding = np.zeros((1, required_dim - X_final.shape[1]))
             X_final = np.concatenate([X_final, padding], axis=1)
         elif X_final.shape[1] > required_dim:
             X_final = X_final[:, :required_dim]
 
-        prob = float(model.predict(X_final, verbose=0)[0][0])
-        etiqueta = "Verdadera" if prob >= 0.5 else "Falsa"
+        # --- Predicción ---
+        probabilidad = float(model.predict(X_final, verbose=0)[0][0])
+        clasificacion = "Verdadera" if probabilidad >= 0.5 else "Falsa"
 
-        # === Calcula explicativos ===
-        coincidencias = len(set(re.findall(r'\b\w+\b', titulo.lower())).intersection(
-                             set(re.findall(r'\b\w+\b', contenido.lower()))))
+        # --- Mostrar resultados ---
+        print("\n📊 Resultados:")
+        print(f"- Probabilidad de ser verdadera: {probabilidad:.2%}")
+        print(f"- Clasificación: {clasificacion}")
+
+        # --- Explicación heurística ---
+        print("\n🔎 Factores considerados:")
+        titulo = df_noticia['titulo'].iloc[0]
+        contenido = df_noticia['contenido'].iloc[0]
+        autor = df_noticia['autor'].iloc[0]
+
+        coincidencias = len(
+            set(limpiar_texto(titulo).split()).intersection(
+                set(limpiar_texto(contenido).split())
+            )
+        )
+        print(f"- Coincidencias título-contenido: {coincidencias} palabras clave")
+
+        if autor.lower() == "desconocido":
+            print("- ⚠️ Autor desconocido (reduce credibilidad)")
+
         longitud = len(contenido.split())
+        if longitud < 150:
+            print(f"- Contenido corto ({longitud} palabras)")
+        elif longitud > 800:
+            print(f"- Contenido muy largo ({longitud} palabras)")
+        else:
+            print(f"- Longitud adecuada ({longitud} palabras)")
+
+        exclamaciones = contenido.count('!')
+        if exclamaciones > 3:
+            print(f"- ⚠️ {exclamaciones} signos de exclamación (posible sensacionalismo)")
 
         dic_emocional = construir_diccionario_emocional(df_diccionario)
         emotividad = calcular_emotividad(contenido, dic_emocional)
         emocion = emocion_predominante(contenido, dic_emocional)
+        print(f"- Score de emotividad: {emotividad:.2f} (emoción predominante: {emocion})")
 
-        # === Contexto para el template ===
-        contexto = {
-            'titulo': titulo,
-            'autor': autor,
-            'fecha': fecha,
-            'contenido': contenido,
-            'pred_keras': f"{etiqueta} ({prob*100:.2f}%)",
-            'coincidencias': coincidencias,
-            'longitud': longitud,
-            'score_emotividad': f"{emotividad:.2f}",
-            'emocion': emocion,
-        }
+    except Exception as e:
+        print(f"\n❌ Error al procesar la noticia: {str(e)}")
+        print("Por favor verifica los datos ingresados e intenta nuevamente.")
 
-        return render(request, 'index.html', contexto)
 
-    else:
-        return render(request, 'index.html')
+# %%
+ingresar_y_clasificar_noticia()
+
+
