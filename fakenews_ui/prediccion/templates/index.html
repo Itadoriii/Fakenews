@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Detección de Fake News</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <style>
+    body {
+      background-color: #f5f6fa;
+    }
+    .form-container {
+      max-width: 700px;
+      margin: 60px auto;
+      background: #fff;
+      padding: 35px;
+      border-radius: 16px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+    }
+    .form-title {
+      font-weight: 600;
+      text-align: center;
+      margin-bottom: 25px;
+    }
+    textarea {
+      resize: vertical;
+    }
+  </style>
+</head>
+<body>
+  <div class="form-container">
+    <h2 class="form-title">Sistema de Detección de Fake News 🕵️‍♀️</h2>
+    <p class="text-center text-muted mb-4">
+      Ingrese los detalles de una noticia para su análisis automático.
+    </p>
+
+    <form action="{% url 'predecir' %}" method="POST">
+      {% csrf_token %}
+      <div class="mb-3">
+        <label for="titulo" class="form-label">📰 Título</label>
+        <input type="text" class="form-control" id="titulo" name="titulo"
+         value="{{ titulo|default:'' }}"
+         placeholder="Ej: Anuncian vacuna milagrosa..." required />
+      </div>
+
+      <div class="mb-3">
+        <label for="contenido" class="form-label">📄 Contenido</label>
+        <textarea class="form-control" id="contenido" name="contenido" rows="7"
+         placeholder="Pega aquí el cuerpo completo de la noticia..." required>{{ contenido|default:'' }}</textarea>
+      </div>
+
+      <div class="row mb-3">
+        <div class="col-md-6">
+          <label for="fecha" class="form-label">📅 Fecha</label>
+          <input type="date" class="form-control" id="fecha" name="fecha"
+           value="{{ fecha|default:'' }}" required />
+        </div>
+        <div class="col-md-6">
+          <label for="autor" class="form-label">✍️ Autor</label>
+          <input type="text" class="form-control" id="autor" name="autor"
+           value="{{ autor|default:'' }}"
+           placeholder="Ej: Agencia X, Juan Pérez..." required />
+        </div>
+      </div>
+
+      <div class="d-grid">
+        <button type="submit" class="btn btn-primary">Analizar</button>
+      </div>
+    </form>
+
+    {% if pred_keras %}
+    <div class="alert alert-info mt-4">
+      <strong>Predicción Modelo Keras:</strong> {{ pred_keras }}<br />
+      <strong>- Coincidencias título-contenido:</strong> {{ coincidencias }} palabras clave<br />
+      <strong>- Longitud:</strong> {{ longitud }} palabras<br />
+      <strong>- Score de emotividad:</strong> {{ score_emotividad }} (emoción: {{ emocion }})
+    </div>
+    {% endif %}
+
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
